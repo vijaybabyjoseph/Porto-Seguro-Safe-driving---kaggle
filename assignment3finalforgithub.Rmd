@@ -1,0 +1,758 @@
+---
+title: "Assignment 3"
+author: "Vijay Baby Joseph"
+date: "3 July 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+rm(list=ls())
+
+library(knitr)
+library(dplyr)
+library(randomForest)
+library(caret)
+library(adabag)
+library(e1071)
+library(pROC)
+library(ROCR)
+library(class)
+library(readr)
+library(data.table)
+
+set.seed(100)
+
+train=fread("C:/Users/Administrator/Desktop/DataScience/Machine Learning/ml asgn3/train.csv")
+
+test=fread("C:/Users/Administrator/Desktop/DataScience/Machine Learning/ml asgn3/test.csv")
+
+
+#View(head(test))
+
+
+#head(id)
+
+nrow(test)
+nrow(train)
+
+class(train)
+
+train=as.data.frame(train)
+test=as.data.frame(test)
+
+```
+
+
+
+# Finding names of categorical variable
+
+- categorical variables were marked cat as per the description and they must be turned to factors 
+```{r}
+cat <- names(train)[grepl("_cat$",names(train))]
+cat
+
+bin <- names(train)[grepl("_bin$",names(train))]
+bin
+
+#str(train)
+#lapply(train, class)
+
+```
+
+### turning categorical variables into factors
+```{r}
+for (i in cat){
+  train[,i] <- as.factor(train[,i])
+  test[,i] <- as.factor(test[,i])
+}
+
+for (i in bin){
+  train[,i] <- as.factor(train[,i])
+  test[,i] <- as.factor(test[,i])
+}
+
+```
+
+
+#comments
+
+- this problem is a classification problem - whether the driver will submit an insurance claim (1) or not (0). 
+
+##Dimension Reduction 
+
+-  comp does not have enough ram to  run all the models with the full data. will reduce dimensions to improve the model and and also save time.
+
+- will eliminate columns with na values, low variance, high correlation and principle component analysis
+
+
+#na count
+
+- there are some values which contain -1 are na
+```{r}
+# changin -1 to na
+train[train == -1] <- NA
+test[test== -1] <- NA
+
+
+############for train set
+
+#na percentage
+
+sapply(train, function(x) sum((is.na(x))/length(x)*100))
+
+
+# na count per col function
+sapply(train, function(x) sum(length(which(is.na(x)))))  
+
+
+# removing cols with too many nas ps_reg_03,ps_car_05_cat,ps_car_07_cat
+
+train$ps_reg_03 = NULL
+
+
+train$ps_car_05_cat = NULL
+
+
+train$ps_car_07_cat = NULL
+
+
+train$ps_car_03_cat = NULL
+
+
+
+# imputing the rest usign mode for cat and mean for the rest
+
+# ps_ind_02_cat ps_ind_04_cat  ps_ind_05_cat ps_car_01_cat  ps_car_02_cat  ps_car_03_cat  ps_car_09_cat
+# ps_car_11      ps_car_12  ps_car_14 
+
+#cat- train
+ 
+train$ps_ind_02_cat[which(is.na(train$ps_ind_02_cat))] = mode(train$ps_ind_02_cat)
+
+train$ps_ind_04_cat[which(is.na(train$ps_ind_04_cat))] = mode(train$ps_ind_04_cat)
+
+train$ps_ind_05_cat[which(is.na(train$ps_ind_05_cat))] = mode(train$ps_ind_05_cat)
+
+train$ps_car_01_cat[which(is.na(train$ps_car_01_cat))] = mode(train$ps_car_01_cat)
+
+train$ps_car_02_cat[which(is.na(train$ps_car_02_cat))] = mode(train$ps_car_02_cat)
+
+train$ps_car_09_cat[which(is.na(train$ps_car_09_cat))] = mode(train$ps_car_09_cat)
+
+
+#rest -train
+
+train$ps_car_11 [which(is.na(train$ps_car_11 ))] = mode(train$ps_car_11 )
+
+train$ps_car_12 [which(is.na(train$ps_car_12 ))] = mode(train$ps_car_12 )
+
+train$ps_car_14 [which(is.na(train$ps_car_14 ))] = mode(train$ps_car_14 )
+
+
+```
+
+
+
+
+
+```{r}
+
+
+##################for test
+
+
+#na percentage
+
+sapply(test, function(x) sum((is.na(x))/length(x)*100))
+
+
+# na count per col function
+sapply(test, function(x) sum(length(which(is.na(x)))))  
+
+
+# removing cols with too many nas ps_reg_03,ps_car_05_cat,ps_car_07_cat
+#removed same as train set
+test$ps_reg_03 = NULL
+
+test$ps_car_05_cat = NULL
+
+test$ps_car_07_cat = NULL
+
+
+test$ps_car_03_cat = NULL
+
+
+#cat- test
+ 
+test$ps_ind_02_cat[which(is.na(test$ps_ind_02_cat))] = mode(test$ps_ind_02_cat)
+
+test$ps_ind_04_cat[which(is.na(test$ps_ind_04_cat))] = mode(test$ps_ind_04_cat)
+
+test$ps_ind_05_cat[which(is.na(test$ps_ind_05_cat))] = mode(test$ps_ind_05_cat)
+
+test$ps_car_01_cat[which(is.na(test$ps_car_01_cat))] = mode(test$ps_car_01_cat)
+
+test$ps_car_02_cat[which(is.na(test$ps_car_02_cat))] = mode(test$ps_car_02_cat)
+
+
+test$ps_car_09_cat[which(is.na(test$ps_car_09_cat))] = mode(test$ps_car_09_cat)
+
+
+#rest -test
+
+test$ps_car_11 [which(is.na(test$ps_car_11 ))] = mode(test$ps_car_11 )
+
+
+test$ps_car_14 [which(is.na(test$ps_car_14 ))] = mode(test$ps_car_14 )
+
+
+#removing leftover na
+
+train=na.omit(train)
+test=na.omit(test)
+
+finaltest=test
+```
+
+
+#Correlation
+
+- no correlations
+```{r}
+
+# correlation - for correlations greater than 75
+
+correlatiion_analysis= function(df){
+  num<-sapply(df, is.numeric)
+  numericalcols<-(df[,num])
+  cormat=cor(numericalcols)
+  corel=as.data.frame(as.table(cormat))
+  colnames(corel)<-c("Col 1","Col 2","Correlation")
+  final=corel%>%filter(Correlation>0.75&Correlation<1)%>%arrange(-Correlation)
+  final
+}
+
+correlatiion_analysis(train)
+
+#class(train)
+```
+
+
+#checking variance
+```{r}
+
+sapply(train%>%select(-id,-target),var)
+
+
+```
+
+
+#PR COMP
+
+```{r}
+newtrain=train
+
+
+#converting everythign to numeric before applying prcomp
+
+lapply(newtrain, class)
+
+newtrain[] <- lapply(newtrain, function(x) {
+    if(is.factor(x)) as.numeric(as.character(x)) else x
+})
+
+newtrain[] <- lapply(newtrain, function(x) {
+    if(is.character(x)) as.numeric(x) else x
+})
+
+newtrain[] <- lapply(newtrain, function(x) {
+    if(is.integer(x)) as.numeric(x) else x
+})
+
+#getting nas due to conversion - and planning to omit them
+sum(is.na(newtrain))
+newtrain=na.omit(newtrain)
+#View(head(newtrain))
+
+trainid=newtrain%>%select(c(id,target))
+newtrain=newtrain%>%select(-c(id,target))
+
+#prcomp
+res <- prcomp(newtrain,scale. = T)
+
+
+#plot(cumsum(res$sdev^2/sum(res$sdev^2)))
+
+eig<-(res$sdev)*res$sdev
+cumm=cumsum(eig)/sum(eig)*100
+cumm
+
+plot(cumsum(eig)/sum(eig)*100)
+
+# from plot and cummulative
+pcsused <- 43 # 90 % of variance
+
+
+newtrain <- res$x[,1:pcsused] %*% t(res$rotation[,1:pcsused])
+newtrain<-cbind.data.frame(trainid,newtrain)
+
+#View(head(newtrain))
+
+
+```
+
+
+
+
+
+#seperation of train data and sampling - 70-30 train-test split
+
+- had problems as the working models only predicted zero
+-  need to sample rows with only one and train it
+- if u have time and ram increase the the sample size (line 341,342) to improve the models
+
+```{r}
+
+train = newtrain
+
+train[] <- lapply(train, function(x) {
+    if(is.character(x)) as.factor(x) else x
+})
+
+train=na.omit(train)
+
+datatrain = train[1:(0.7*nrow(train)),]
+datatest = train[(0.7*nrow(train)+1):nrow(train),]
+
+datatrain$target=as.factor(datatrain$target)
+datatrain$id=as.factor(datatrain$id)
+
+sapply(datatrain,class)
+
+a0=datatrain[datatrain$target==0,]
+nrow(a0)
+
+
+a1=datatrain[datatrain$target==1,]
+nrow(a1)
+
+train0 = datatrain[ sample( which( datatrain$target == 0 ) , 1000 ) , ]
+train1 = datatrain[ sample( which( datatrain$target == 1 ) , 1000 ) , ]
+datatrain = rbind(train0,train1) 
+
+sapply(datatrain, nlevels)
+sapply(datatrain, class)
+
+datatrain$ps_car_11 = as.numeric(datatrain$ps_car_11)
+datatrain$ps_car_12 = as.numeric(datatrain$ps_car_12)
+datatrain$ps_car_14 = as.numeric(datatrain$ps_car_14)
+
+datatest$ps_car_11 = as.numeric(datatest$ps_car_11)
+datatest$ps_car_12 = as.numeric(datatest$ps_car_12)
+datatest$ps_car_14 = as.numeric(datatest$ps_car_14)
+
+
+```
+
+
+
+
+################################################################################################################################################################################################################################
+
+
+
+Please note the following:
+
+- sample sizes have been limited to 1000 per class(0-noclaim 1-yesclaim) can improve performane if increased
+- random forest and logistic regression works on small samples - hangs the computer when they are too large
+
+
+- used logistic regression for final result
+
+If you have a solutions of grad, ada and xgboost that will work, kindly share it.
+
+
+Thank you
+
+################################################################################################################################################################################################################################
+
+
+#Logistic Regression
+```{r}
+#Load Train and Test datasets
+
+logtrain <- datatrain
+
+
+logtest <- datatest
+
+
+
+# ps car 04 has different levels for test and train - no time fix it so deleting
+logtrain<-subset(logtrain,select=-ps_car_04_cat)
+logtest<-subset(logtest,select=-ps_car_04_cat)
+
+logtrain=subset(logtrain, select = -id)
+
+
+# Train the model 
+log<- glm(target~ ., data = logtrain,family='binomial'(link = 'logit'))
+
+
+#Predict Output
+
+predicted = predict(log,logtest) 
+
+id=logtest%>%select(id)
+result = cbind(id,predicted)
+
+
+
+#confusion matrix
+
+#View(head(result,10))
+
+result$predicted=ifelse(result$predicted>0.5,1,0)
+
+
+
+logtest$target=as.factor(logtest$target)
+result$predicted=as.factor(result$predicted)
+
+
+
+lgrs=confusionMatrix(result$predicted, logtest$target, positive = '1')
+
+lgrs
+
+
+
+#accuracy
+acculrf=lgrs$overall['Accuracy']*100
+acculrf
+
+
+
+#kappa
+
+kapparf=lgrs$overall['Kappa']
+kapparf
+
+
+#AUC
+logtest$target = as.numeric(logtest$target)
+result$predicted = as.numeric(result$predicted)
+
+
+m1 = roc(logtest$target,result$predicted)
+m1
+plot(m1)
+    
+
+
+# F1
+zz = as.matrix(lgrs$table)
+diag= diag(zz)
+rowsums = apply(zz, 1, sum) 
+colsums = apply(zz, 2, sum)
+precision = diag / colsums 
+recall = diag / rowsums 
+f1 = 2 * precision * recall / (precision + recall) 
+f1
+
+
+
+```
+
+ 
+
+#Random forest
+
+```{r}
+#Load Train and Test datasets
+
+rf_train <- datatrain
+
+rf_test <- datatest
+
+sapply(rf_train, nlevels)
+sapply(rf_train, class)
+
+# has more levesl than rf can handle so delete
+rf_train<-subset(rf_train,select=-ps_car_11_cat)
+rf_test<-subset(rf_test,select=-ps_car_11_cat)
+
+
+rfid=rf_train%>%select(id)
+rf_train=rf_train%>%select(-id)
+
+
+# Fitting model
+rf <- randomForest(target~., data=rf_train)
+
+
+#Predict Output 
+predicted= predict(rf,rf_test)
+
+id = rf_test%>%select(id)
+result = cbind(id,predicted)
+
+#confusion matrix
+
+#View(head(result,10))
+
+class(rf_test$target)
+
+nlevels(rf_test$target)
+nlevels(result$predicted)
+
+rf_test$target=as.factor(rf_test$target)
+result$predicted=as.factor(result$predicted)
+
+
+lgrs=confusionMatrix(result$predicted, rf_test$target, positive = '1')
+
+lgrs
+
+#accuracy
+acculrf=lgrs$overall['Accuracy']*100
+acculrf
+
+
+#kappa
+
+kapparf=lgrs$overall['Kappa']
+kapparf
+
+
+#AUC
+rf_test$target = as.numeric(rf_test$target)
+result$predicted = as.numeric(result$predicted)
+
+
+m1 = roc(rf_test$target,result$predicted)
+m1
+plot(m1)
+    
+
+
+# F1
+zz = as.matrix(lgrs$table)
+diag= diag(zz)
+rowsums = apply(zz, 1, sum) 
+colsums = apply(zz, 2, sum)
+precision = diag / colsums 
+recall = diag / rowsums 
+f1 = 2 * precision * recall / (precision + recall) 
+f1
+```
+
+
+#Gradient Boosting Algorithms
+
+- too heavy cant run - only a very small sample can be used  
+```{r, eval=FALSE}
+
+#Load Train and Test datasets
+
+gb_train <- datatrain
+
+gb_test <- datatest
+
+
+
+# Fitting model
+fitControl <- trainControl( method = "cv", number = 1)
+fit <- train(target ~ ., data = gb_train, method = "gbm", trControl = fitControl,verbose = FALSE)
+predicted= predict(fit,gb_test,type= "prob")[,2] 
+
+id = gb_test%>%select(id)
+result = cbind(id,predicted)
+
+#confusion matrix
+
+#View(head(result,10))
+
+class(gb_test$target)
+
+nlevels(gb_test$target)
+nlevels(result$predicted)
+
+gb_test$target=as.factor(gb_test$target)
+result$predicted=as.factor(result$predicted)
+
+
+lgrs=confusionMatrix(result$predicted, gb_test$target, positive = '1')
+
+lgrs
+
+#accuracy
+acculrf=lgrs$overall['Accuracy']*100
+acculrf
+
+
+#kappa
+
+kapparf=lgrs$overall['Kappa']
+kapparf
+
+
+#AUC
+gb_test$target = as.numeric(gb_test$target)
+result$predicted = as.numeric(result$predicted)
+
+
+m1 = roc(gb_test$target,result$predicted)
+m1
+plot(m1)
+    
+
+
+# F1
+zz = as.matrix(lgrs$table)
+diag= diag(zz)
+rowsums = apply(zz, 1, sum) 
+colsums = apply(zz, 2, sum)
+precision = diag / colsums 
+recall = diag / rowsums 
+f1 = 2 * precision * recall / (precision + recall) 
+f1
+
+
+```
+
+
+
+# adaboost
+
+- too heavy
+```{r, eval=FALSE}
+#Load Train and Test datasets
+
+ad_train <- datatrain
+
+ad_test <- datatest
+
+#ad_train=as.factor(ad_train)
+
+#model
+model_boost = boosting(target~.,data = ad_train)
+
+#predict
+predicted=predict(model_boost, ad_test)
+
+id = ad_test%>%select(id)
+result = cbind(id,predicted)
+
+#confusion matrix
+
+#View(head(result,10))
+
+class(ad_test$target)
+
+nlevels(ad_test$target)
+nlevels(result$predicted)
+
+ad_test$target=as.factor(ad_test$target)
+result$predicted=as.factor(result$predicted)
+
+
+lgrs=confusionMatrix(result$predicted, ad_test$target, positive = '1')
+
+lgrs
+
+#accuracy
+acculrf=lgrs$overall['Accuracy']*100
+acculrf
+
+
+#kappa
+
+kapparf=lgrs$overall['Kappa']
+kapparf
+
+
+#AUC
+ad_test$target = as.numeric(ad_test$target)
+result$predicted = as.numeric(result$predicted)
+
+
+m1 = roc(ad_test$target,result$predicted)
+m1
+plot(m1)
+    
+
+
+# F1
+zz = as.matrix(lgrs$table)
+diag= diag(zz)
+rowsums = apply(zz, 1, sum) 
+colsums = apply(zz, 2, sum)
+precision = diag / colsums 
+recall = diag / rowsums 
+f1 = 2 * precision * recall / (precision + recall) 
+f1
+
+```
+
+
+
+
+# FINAL RESULT
+
+- logistic gives the best result so using it on the test set
+- need to increase sample size from 2000 to increase predictive power
+
+```{r}
+test=fread("C:/Users/Administrator/Desktop/DataScience/Machine Learning/ml asgn3/test.csv")
+nrow(test)
+
+#Predict Output
+
+# ps car 04 has different levels for test and train - no time fix it so deleting
+test<-subset(test,select=-ps_car_04_cat)
+
+#sapply(test,class)
+
+test[] <- lapply(test, function(x) {
+    if(!is.numeric(x)) as.numeric(x) else x
+})
+
+#test=na.omit(test)
+
+test$id=as.factor(test$id)
+
+test$ps_car_11 = as.numeric(test$ps_car_11)
+test$ps_car_12 = as.numeric(test$ps_car_12)
+test$ps_car_14 = as.numeric(test$ps_car_14)
+
+#sapply(logtest,class)
+
+target = predict(log,test, type = "response") 
+id = test%>%select(id)
+result = cbind(id,target)
+
+result$target=ifelse(result$target>0.5,1,0)
+
+
+#a0=result[result$target==1,]
+#nrow(a0)
+
+
+nrow(result)
+
+View(head(result,10))
+
+write.csv(result, file = "sub.csv")
+#getwd()
+
+
+
+```
+
+
+
+
+
